@@ -5,10 +5,16 @@ consonants= ['P', 'B', 'CH', 'D', 'DH', 'F', 'G', 'HH', 'JH', 'K', 'L', 'M',
 'N', 'NG', 'R', 'S', 'SH', 'T', 'TH', 'V', 'W', 'Y', 'Z', 'ZH']
 vector_map = vowels + consonants
 
+
 def read_data(file_path):
 	with open(file_path) as f:
 		lines = f.read().splitlines()
 	return lines
+
+def get_words(file_path):
+	lines = read_data(file_path)
+	return [word(line) for line in lines]
+
 
 # Filter numbers from string
 def filter_stress(string):
@@ -40,8 +46,3 @@ class word(object):
 		self.vowel_map = phenom_map(self.pn_list,vowels)
 		self.consonant_map = phenom_map(self.pn_list,consonants)
 		self.vector_map = phenom_map(vector_map,self.pn_list)
-
-for line in read_data('asset/training_data.txt'):
-	x = word(line)
-	print(x.pn_list)
-	print(x.vector_map)
