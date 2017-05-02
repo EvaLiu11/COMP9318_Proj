@@ -1,3 +1,4 @@
+import nltk
 # Phenoms
 vowels= ['AA','AE', 'AH', 'AO', 'AW', 'AY', 'EH', 'ER', 'EY', 'IH'
 , 'IY', 'OW', 'OY', 'UH', 'UW']
@@ -33,6 +34,12 @@ def phenom_map(pronunciation,phenom_list):
 	phenom_list = [filter_stress(phenom) for phenom in phenom_list]
 	return [1 if phenom in phenom_list else 0 for phenom in pronunciation]
 
+def get_pos_tag(word):
+	return nltk.pos_tag([word])[0][1]
+
+def get_stress_position(stress_map,stress=1):
+	return stress_map.index(stress)
+
 # Object to hold each word
 class word(object):
 	"""docstring for word"""
@@ -42,7 +49,9 @@ class word(object):
 		self.pronunciation = word_string.split(':')[1]
 		self.pn_list = self.pronunciation.split()
 		self.primary_stress_map = stress_map(self.pn_list)
+		self.primary_stress_idx = get_stress_position(self.primary_stress_map)
 		self.secondary_stress_map = stress_map(self.pn_list, stress='2')
 		self.vowel_map = phenom_map(self.pn_list,vowels)
 		self.consonant_map = phenom_map(self.pn_list,consonants)
 		self.vector_map = phenom_map(vector_map,self.pn_list)
+		self.type_tag = get_pos_tag(self.word)
