@@ -72,10 +72,13 @@ def stress_map(pronunciation,stress='1'):
 
 # Maps the the location of phenom, 1 in phenom_list
 # 0 otherwise
-# When being used to map phenoms to vector_map filters stresses filters stresses
-# first, this step is superfluous for for vowel and consonant map
-def phenom_map(pronunciation, phenom_list=None):
-	return [1 if phenom in phenom_list else 0 for phenom in pronunciation]
+def phoneme_map(pronunciation, phoneme_list):
+	return [1 if phoneme in phoneme_list else 0 for phoneme in pronunciation]
+
+# Map existance of one iterable in another
+def iterable_map(list_to_map, iterable):
+	return [1 if iter_item in list_to_map else 0 for iter_item in iterable]
+
 
 def get_pos_tag(word):
 	return nltk.pos_tag([word])[0][1]
@@ -98,6 +101,9 @@ def check_suffix(word):
 			return 1
 	return 0
 
+def get_first_letter_idx(word):
+	return string.ascii_lowercase.index(word[0].lower()) + 1
+
 '''
 Object to hold each word
 word : Word
@@ -115,6 +121,7 @@ phenom_length: Number of phonemes
 prefix: 1 if prefix exists 0 otherwise
 suffix: 1 if suffix exists 0 otherwise
 '''
+
 class word(object):
 	"""docstring for word"""
 	def __init__(self, word_string):
@@ -125,9 +132,9 @@ class word(object):
 		self.primary_stress_map = stress_map(self.pn_list)
 		self.primary_stress_idx = get_stress_position(self.primary_stress_map)
 		self.secondary_stress_map = stress_map(self.pn_list, stress='2')
-		self.vowel_map = phenom_map(self.pn_list,vowels)
-		self.consonant_map = phenom_map(self.pn_list,consonants)
-		self.vector_map = phenom_map(vector_map,self.pn_list)
+		self.vowel_map = phoneme_map(self.pn_list,vowels)
+		self.consonant_map = phoneme_map(self.pn_list,consonants)
+		self.vector_map = phoneme_map(vector_map,self.pn_list)
 		self.type_tag = get_pos_tag(self.word)
 		self.first_letter_index = string.ascii_lowercase.index(self.word[0].lower()) + 1
 		self.phoneme_length = len(self.pn_list)
@@ -141,8 +148,14 @@ def get_words(file_path):
 	words['primary_stress_map'] = words.pn_list.apply(stress_map)
 	words['secondary_stress_map'] = words.pn_list.apply(stress_map,stress='2')
 	words['primary_stress_idx'] = words.primary_stress_map.apply(get_stress_position)
-	words['vowel_map'] = words.destressed_pn_list.apply(phenom_map,vowels)
-	words['consonant_map'] = words.destressed_pn_list.apply(phenom_map, consonants)
+	words['vowel_map'] = words.destressed_pn_list.apply(phoneme_map,args=(vowels,))
+	words['consonant_map'] = words.destressed_pn_list.apply(phoneme_map, args=(consonants,))
+	words['vector_map'] = words.destressed_pn_list.apply(iterable_map, args=(vector_map,))
+	words['type_tag'] = words.word.apply(get_pos_tag)
+	words['1st_letter_idx'] = words.word.apply(get_first_letter_idx)
+	words['phoneme_length'] = words.pn_list.str.len()
+	words['prefix'] = words.word.apply(check_prefix)
+	words['suffix'] = words.word.apply(check_suffix)
 
 	return words
 
