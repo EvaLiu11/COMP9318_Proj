@@ -3,20 +3,19 @@ import pandas as pd
 import pandas2arff as pd2a
 import string
 
-# Phenoms
-vowels= ['AA','AE', 'AH', 'AO', 'AW', 'AY', 'EH', 'ER', 'EY', 'IH'
-, 'IY', 'OW', 'OY', 'UH', 'UW']
-consonants= ['P', 'B', 'CH', 'D', 'DH', 'F', 'G', 'HH', 'JH', 'K', 'L', 'M',
-'N', 'NG', 'R', 'S', 'SH', 'T', 'TH', 'V', 'W', 'Y', 'Z', 'ZH']
+# Phonemes
+vowels= ('AA','AE', 'AH', 'AO', 'AW', 'AY', 'EH', 'ER', 'EY', 'IH'
+, 'IY', 'OW', 'OY', 'UH', 'UW')
 
-
-suffixes=['inal','tion','sion','osis','oon','sce','que','ette','eer','ee','aire','able','ible','acy','cy','ade','age','al','al','ial','ical','an','ance','ence',
+consonants= ('P', 'B', 'CH', 'D', 'DH', 'F', 'G', 'HH', 'JH', 'K', 'L', 'M','N',
+ 				'NG', 'R', 'S', 'SH', 'T', 'TH', 'V', 'W', 'Y', 'Z', 'ZH')
+suffixes=('inal','tion','sion','osis','oon','sce','que','ette','eer','ee','aire','able','ible','acy','cy','ade','age','al','al','ial','ical','an','ance','ence',
 		'ancy','ency','ant','ent','ant','ent','ient','ar','ary','ard','art','ate','ate','ate','ation','cade','drome','ed','ed','en','en','ence','ency','er','ier',
 		'er','or','er','or','ery','es','ese','ies','es','ies','ess','est','iest','fold','ful','ful','fy','ia','ian','iatry','ic','ic','ice','ify','ile',
 		'ing','ion','ish','ism','ist','ite','ity','ive','ive','ative','itive','ize','less','ly','ment','ness','or','ory','ous','eous','ose','ious','ship','ster',
-		'ure','ward','wise','ize','phy','ogy']
+		'ure','ward','wise','ize','phy','ogy')
 
-prefixes=['ac','ad','af','ag','al','an','ap','as','at','an','ab','abs','acer','acid','acri','act','ag','acu','aer','aero','ag','agi',
+prefixes=('ac','ad','af','ag','al','an','ap','as','at','an','ab','abs','acer','acid','acri','act','ag','acu','aer','aero','ag','agi',
 			'ig','act','agri','agro','alb','albo','ali','allo','alter','alt','am','ami','amor','ambi','ambul','ana','ano','andr','andro','ang',
 			'anim','ann','annu','enni','ante','anthrop','anti','ant','anti','antico','apo','ap','aph','aqu','arch','aster','astr','auc','aug',
 			'aut','aud','audi','aur','aus','aug','auc','aut','auto','bar','be','belli','bene','bi','bine','bibl','bibli','biblio','bio','bi',
@@ -50,7 +49,7 @@ prefixes=['ac','ad','af','ag','al','an','ap','as','at','an','ab','abs','acer','a
 			'tin','tain','tend','tent','tens','tera','term','terr','terra','test','the','theo','therm','thesis','thet','tire','tom','tor','tors','tort'
 			,'tox','tract','tra','trai','treat','trans','tri','trib','tribute','turbo','typ','ultima','umber','umbraticum','un','uni','vac','vade','vale',
 			'vali','valu','veh','vect','ven','vent','ver','veri','verb','verv','vert','vers','vi','vic','vicis','vict','vinc','vid','vis','viv','vita','vivi'
-			,'voc','voke','vol','volcan','volv','volt','vol','vor','with','zo']
+			,'voc','voke','vol','volcan','volv','volt','vol','vor','with','zo')
 
 suffixes_set = {suffix.upper() for suffix in suffixes}
 prefixes_set = {prefix.upper() for prefix in prefixes}
@@ -62,14 +61,9 @@ def read_data(file_path):
 		lines = f.read().splitlines()
 	return lines
 
-def get_words(file_path):
-	lines = read_data(file_path)
-	return [word(line) for line in lines]
-
-
 # Filter numbers from string
 def filter_stress(string):
-	return ''.join([i for i in string if not i.isdigit()])
+	return ''.join([i for i in string if not i.isdigit()]).split()
 
 # Maps the location of the stress, 1 if stress at position
 # 0 otherwise
@@ -80,15 +74,14 @@ def stress_map(pronunciation,stress='1'):
 # 0 otherwise
 # When being used to map phenoms to vector_map filters stresses filters stresses
 # first, this step is superfluous for for vowel and consonant map
-def phenom_map(pronunciation,phenom_list):
-	phenom_list = [filter_stress(phenom) for phenom in phenom_list]
+def phenom_map(pronunciation, phenom_list=None):
 	return [1 if phenom in phenom_list else 0 for phenom in pronunciation]
 
 def get_pos_tag(word):
 	return nltk.pos_tag([word])[0][1]
 
 def get_stress_position(stress_map,stress=1):
-	return stress_map.index(stress) + 1
+	return str(stress_map.index(stress) + 1)
 
 # Check if prefix exists
 def check_prefix(word):
@@ -104,8 +97,6 @@ def check_suffix(word):
 		if word[abs(letter_idx-word_length) :] in suffixes_set:
 			return 1
 	return 0
-
-check_prefix('PURVIEW')
 
 '''
 Object to hold each word
@@ -143,9 +134,23 @@ class word(object):
 		self.prefix = check_prefix(self.word)
 		self.suffix = check_suffix(self.word)
 
+def get_words(file_path):
+	words = pd.read_csv(file_path,sep=':',names=['word','pronunciation'])
+	words['pn_list'] = words.pronunciation.apply(str.split)
+	words['destressed_pn_list'] = words.pronunciation.apply(filter_stress)
+	words['primary_stress_map'] = words.pn_list.apply(stress_map)
+	words['secondary_stress_map'] = words.pn_list.apply(stress_map,stress='2')
+	words['primary_stress_idx'] = words.primary_stress_map.apply(get_stress_position)
+	words['vowel_map'] = words.destressed_pn_list.apply(phenom_map,vowels)
+	words['consonant_map'] = words.destressed_pn_list.apply(phenom_map, consonants)
+
+	return words
+
 if __name__ == '__main__':
 	data_loc = 'asset/training_data.txt'
 	words = get_words(data_loc)
+	words.head()
+
 	words_df = pd.DataFrame([word.__dict__ for word in words])
 	columns = ['word','type_tag','first_letter_index','phoneme_length','suffix','prefix','primary_stress_idx']
 	pd2a.pandas2arff(words_df[columns],'weka/word_typetag.arff','word_typetag')
