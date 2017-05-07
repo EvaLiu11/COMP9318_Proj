@@ -84,6 +84,7 @@ def iterable_map(list_to_map, iterable):
 def get_pos_tag(word):
     return nltk.pos_tag([word])[0][1]
 
+# Returning string as a classification
 def get_stress_position(stress_map,stress=1):
     return str(stress_map.index(stress) + 1)
 
@@ -104,6 +105,11 @@ def check_suffix(word):
 
 def get_first_letter_idx(word):
     return string.ascii_lowercase.index(word[0].lower()) + 1
+
+def get_stressed_vowel(pn_list):
+    for vowel in pn_list:
+        if '1' in vowel:
+            return filter_stress(vowel)[0]
 
 '''
 Dataframe to hold list of words
@@ -141,6 +147,11 @@ def get_words(file_path):
     words['suffix'] = words.word.apply(check_suffix)
     #words['prefix_suffix_vector'] = words.
     words['primary_stress_idx'] = words.primary_stress_map.apply(get_stress_position)
+    words['stressed_vowel'] = words.pn_list.apply(get_stressed_vowel)
+
+    # Unpack vector map into single columns
+    unpacked_vector_map = pd.DataFrame.from_records(words.vector_map.tolist(),columns=vector_map)
+    words = pd.concat([words, unpacked_vector_map],axis=1)
 
     return words
 
