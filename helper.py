@@ -1,8 +1,8 @@
-import nltk
 import pandas as pd
 import numpy as np
 import pandas2arff as pd2a
 import string
+import nltk
 
 # Phonemes
 vowels= ('AA','AE', 'AH', 'AO', 'AW', 'AY', 'EH', 'ER', 'EY', 'IH'
@@ -62,8 +62,13 @@ def read_data(file_path):
         lines = f.read().splitlines()
     return lines
 
+def as_tuple(list_to_convert):
+    return tuple(list_to_convert)
+
 # Filter numbers from string
 def filter_stress(string):
+    if type(string) in [list,tuple]:
+        string = ' '.join(string)
     return ''.join([i for i in string if not i.isdigit()]).split()
 
 # Maps the location of the stress, 1 if stress at position
