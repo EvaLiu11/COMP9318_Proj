@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import string
 import nltk
+import pickle
 
 from sklearn.neighbors import KNeighborsClassifier
 
@@ -158,6 +159,9 @@ def is_primary(sequence):
             return True
     return False
 
+def line_split(line):
+    line = line.split(':')
+    return line[0],line[1]
 
 '''
 Dataframe to hold list of words
@@ -177,8 +181,9 @@ prefix: 1 if prefix exists 0 otherwise
 suffix: 1 if suffix exists 0 otherwise
 '''
 
-def get_words(file_path):
-    words = pd.read_csv(file_path,sep=':',names=['word','pronunciation'])
+def get_words(datafile):
+    lines = [line_split(line) for line in datafile]
+    words = pd.DataFrame(data=lines,columns=('word','pronunciation'))
     words['pn_list'] = words.pronunciation.apply(str.split)
     words['destressed_pn_list'] = words.pronunciation.apply(filter_stress)
     words['primary_stress_map'] = words.pn_list.apply(stress_map)
@@ -188,40 +193,79 @@ def get_words(file_path):
     words['vector_map'] = words.destressed_pn_list.apply(iterable_map, args=(vector_map,))
     words['vowel_count'] = words.vowel_map.apply(np.sum)
     words['consonant_count'] = words.consonant_map.apply(np.sum)
-    words['type_tag'] = words.word.apply(get_pos_tag)
+    #words['type_tag'] = words.word.apply(get_pos_tag)
     words['1st_letter_idx'] = words.word.apply(get_first_letter_idx)
     words['phoneme_length'] = words.pn_list.str.len()
-    words['prefix'] = words.word.apply(check_prefix)
-    words['suffix'] = words.word.apply(check_suffix)
+    #words['prefix'] = words.word.apply(check_prefix)
+    #words['suffix'] = words.word.apply(check_suffix)
     #words['prefix_suffix_vector'] = words.
-    words['primary_stress_idx'] = words.primary_stress_map.apply(get_stress_position)
+    #words['primary_stress_idx'] = words.primary_stress_map.apply(get_stress_position)
     words['stressed_vowel'] = words.pn_list.apply(get_stressed_vowel)
 
     # Unpack vector map into single columns
-    unpacked_vector_map = pd.DataFrame.from_records(words.vector_map.tolist(),columns=vector_map)
-    words = pd.concat([words, unpacked_vector_map],axis=1)
+    #unpacked_vector_map = pd.DataFrame.from_records(words.vector_map.tolist(),columns=vector_map)
+    #words = pd.concat([words, unpacked_vector_map],axis=1)
 
     return words
+
+################# ngrams ###################
+
+def sub_string(pronunciation_list,length):
+    return tuple(zip(*(pronunciation_list[i:] for i in range(length))))
+
+def get_sequences(phoneme_series):
+    sequences = {}
+    max_length = max(phoneme_series.str.len())
+    for i in range(2, max_length + 1):
+        for pn_list in phoneme_series:
+            # Next iteration if pn_list is shorter then the sequence length be built
+            if len(pn_list) < i:
+                continue
+            word_sequences = sub_string(pn_list,i)
+            for seq in word_sequences:
+                sequences[seq] = sequences.get(seq,0) + 1
+    return sequences
+
+def in_list(pn_list,sequence):
+    if pn_list in sequence:
+        return 1
+    return 0
+
+def is_primary(sequence):
+    for phoneme in sequence:
+        if '1' in phoneme:
+            return True
+    return False
+
+def get_ngrams(words):
+    # Generate Dataframe with all destressed sequence possibilities and get counts
+    destressed_ngrams = get_sequences(words.destressed_pn_list)
+    destressed_ngrams_df = pd.DataFrame(list(destressed_ngrams.items()),columns=['Destressed_Sequence','Destressed_Sequence_Count'])
+    destressed_ngrams_df = destressed_ngrams_df.set_index('Destressed_Sequence')
+    # Generate Dataframe with all sequence possibiities and get counts, flag if primary stress in sequence
+    sequences = get_sequences(words.pn_list)
+    sequence_df = pd.DataFrame(list(sequences.items()),columns=['Sequence','Sequence_Count'])
+
+    # Return True is sequence has primary stress in it
+    sequence_df['Is_Primary'] = sequence_df.Sequence.apply(is_primary)
+    sequence_df['Destressed_Sequence'] = sequence_df.Sequence.apply(h.filter_stress)
+    sequence_df.Destressed_Sequence = sequence_df.Destressed_Sequence.apply(h.as_tuple)
+    sequence_df = sequence_df.query('Is_Primary == True').set_index('Destressed_Sequence')
+
+    # Join
+    sequences_df = sequence_df.join(destressed_sequence_df)
+
+    # Get probability that sequence if exists will be stressed
+    sequences_df['Sequence_Stress_Probability'] = sequences_df.Sequence_Count/sequences_df.Destressed_Sequence_Count
+    sequences_df['Sequence_Length'] = sequences_df.Sequence.str.len()    
 
 ################# training #################
 
 def train(data, classifier_file):# do not change the heading of the function
-    pass # **replace** this line with your code
+    words = get_words(data)
+    return words
 
 ################# testing #################
 
 def test(data, classifier_file):# do not change the heading of the function
     pass # **replace** this line with your code
-
-if __name__ == '__main__':
-    data_loc = 'asset/training_data.txt'
-    words = h.get_words(data_loc)
-
-    word_vectors = [word.vector_map for word in words]
-    stress_pos = [word.primary_stress_map.index(1) for word in words]
-    df = pd.DataFrame(word_vectors,columns=h.vector_map)
-    #df['Stress_Pos'] = stress_pos
-
-    neigh = KNeighborsClassifier(n_neighbors=3,weights='uniform',p=2)
-    neigh.fit(df, stress_pos)
-    print(neigh.score(df, stress_pos))
