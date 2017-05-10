@@ -81,6 +81,11 @@ def filter_stress(string):
         string = ' '.join(string)
     return ''.join([i for i in string if not i.isdigit()]).split()
 
+# Filter non-important stresses
+def filter_non_primary_stress(pronunciation):
+    pronunciation = pronunciation.replace('0','')
+    return pronunciation.replace('2','')
+
 # Maps the location of the stress, 1 if stress at position
 # 0 otherwise
 def stress_map(pronunciation,stress='1'):
@@ -161,7 +166,7 @@ def is_primary(sequence):
 
 def line_split(line):
     line = line.split(':')
-    return line[0],line[1]
+    return line[0],filter_non_primary_stress(line[1])
 
 '''
 Dataframe to hold list of words
@@ -205,59 +210,90 @@ def get_words(datafile):
     # Unpack vector map into single columns
     #unpacked_vector_map = pd.DataFrame.from_records(words.vector_map.tolist(),columns=vector_map)
     #words = pd.concat([words, unpacked_vector_map],axis=1)
-
     return words
 
 ################# ngrams ###################
 
-def sub_string(pronunciation_list,length):
+# Return all ngrams of particular length
+def get_ngrams(pronunciation_list,length):
     return tuple(zip(*(pronunciation_list[i:] for i in range(length))))
 
+# Develop set of all possible ngrams
 def get_sequences(phoneme_series):
-    sequences = {}
+    ngrams = {}
     max_length = max(phoneme_series.str.len())
     for i in range(2, max_length + 1):
         for pn_list in phoneme_series:
             # Next iteration if pn_list is shorter then the sequence length be built
             if len(pn_list) < i:
                 continue
-            word_sequences = sub_string(pn_list,i)
-            for seq in word_sequences:
-                sequences[seq] = sequences.get(seq,0) + 1
-    return sequences
+            word_ngrams = get_ngrams(pn_list,i)
+            for ngram in word_ngrams:
+                ngrams[ngram] = ngrams.get(ngram,0) + 1
+    return ngrams
 
-def in_list(pn_list,sequence):
-    if pn_list in sequence:
+# Check if ngram in list
+def in_list(pn_list,ngram):
+    if pn_list in ngram:
         return 1
     return 0
 
-def is_primary(sequence):
-    for phoneme in sequence:
+# Check if ngram has primary stress
+def is_primary(ngram):
+    for phoneme in ngram:
         if '1' in phoneme:
             return True
     return False
 
+# Check if there is a smaller ngram in set
+def has_ngram(ngram,ngram_set):
+    # Do not check sequences of length 2 or the final as they will obviously be in the set
+    for i in range(2,len(ngram)):
+        subsequence = ngram[0:i]
+        if subsequence in ngram_set :
+            return True
+    return False
+
+# Return true if ngram in family
+def in_family(family,ngram):
+    return family == ngram[0:len(family)]
+
+# Add series to data frame which include the smallest ngram within a larger ngram
+def collapse_ngrams(ngram_df,column):
+    ngram_df.sort_index(inplace=True)
+    ngrams = ngram_df[column].values.tolist()
+    ngram_families = []
+    current_family = ngrams[0]
+    for ngram in ngrams:
+        if not in_family(current_family,ngram):
+            current_family = ngram
+        ngram_families.append(current_family)
+    ngram_df['ngram_family'] = pd.Series(ngram_families).values
+    return ngram_df
+
 def get_ngrams(words):
-    # Generate Dataframe with all destressed sequence possibilities and get counts
+    # Generate Dataframe with all destressed ngram possibilities and get counts
     destressed_ngrams = get_sequences(words.destressed_pn_list)
-    destressed_ngrams_df = pd.DataFrame(list(destressed_ngrams.items()),columns=['Destressed_Sequence','Destressed_Sequence_Count'])
-    destressed_ngrams_df = destressed_ngrams_df.set_index('Destressed_Sequence')
-    # Generate Dataframe with all sequence possibiities and get counts, flag if primary stress in sequence
-    sequences = get_sequences(words.pn_list)
-    sequence_df = pd.DataFrame(list(sequences.items()),columns=['Sequence','Sequence_Count'])
+    destressed_ngrams_df = pd.DataFrame(list(destressed_ngrams.items()),columns=['destressed_ngram','destressed_ngram_ount'])
+    destressed_ngrams_df = destressed_ngrams_df.set_index('destressed_ngram',drop=False)
+
+    # Generate Dataframe with all ngram possibiities and get counts, flag if primary stress in sequence
+    ngrams = get_sequences(words.pn_list)
+    ngram_df = pd.DataFrame(list(ngrams.items()),columns=['ngram','ngram_count'])
 
     # Return True is sequence has primary stress in it
-    sequence_df['Is_Primary'] = sequence_df.Sequence.apply(is_primary)
-    sequence_df['Destressed_Sequence'] = sequence_df.Sequence.apply(h.filter_stress)
-    sequence_df.Destressed_Sequence = sequence_df.Destressed_Sequence.apply(h.as_tuple)
-    sequence_df = sequence_df.query('Is_Primary == True').set_index('Destressed_Sequence')
+    ngram_df['Is_Primary'] = ngram_df.ngram.apply(is_primary)
+    ngram_df['destressed_ngram'] = ngram_df.ngram.apply(h.filter_stress)
+    ngram_df.destressed_ngram = ngram_df.destressed_ngram.apply(h.as_tuple)
+    ngram_df = ngram_df.query('Is_Primary == True').set_index('destressed_ngram')
 
     # Join
-    sequences_df = sequence_df.join(destressed_sequence_df)
+    ngram_priors = ngram_df.join(destressed_ngrams_df)
 
     # Get probability that sequence if exists will be stressed
-    sequences_df['Sequence_Stress_Probability'] = sequences_df.Sequence_Count/sequences_df.Destressed_Sequence_Count
-    sequences_df['Sequence_Length'] = sequences_df.Sequence.str.len()    
+    ngram_priors['ngram_stress_probability'] = ngram_priors.ngram_count/ngram_priors.destressed_ngram_count
+    ngram_priors['ngram_length'] = ngram_priors.ngram.str.len()
+    return ngram_priors
 
 ################# training #################
 
