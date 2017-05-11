@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 import string
+import re
 import nltk
 import pickle
 
@@ -103,7 +104,6 @@ suffixes_set = {suffix.upper() for suffix in suffixes}
 prefixes_set = {prefix.upper() for prefix in prefixes}
 vector_map = vowels + consonants
 
-
 ################# helper functions #########
 
 
@@ -118,11 +118,12 @@ def as_tuple(list_to_convert):
     return tuple(list_to_convert)
 
 
-# Filter numbers from string
-def filter_stress(string):
-    if type(string) in [list, tuple]:
-        string = ' '.join(string)
-    return ''.join([i for i in string if not i.isdigit()]).split()
+# Filter stress from string
+
+def filter_stress(string_to_be_filtered, to_filter=None):
+    if type(string_to_be_filtered) in [list, tuple]:
+        string_to_be_filtered = ' '.join(string_to_be_filtered)
+    return tuple(re.sub(to_filter,'',string_to_be_filtered).split())
 
 
 # Filter non-important stresses
@@ -184,7 +185,7 @@ def get_first_letter_idx(word):
 def get_stressed_vowel(pn_list):
     for vowel in pn_list:
         if '1' in vowel:
-            return filter_stress(vowel)[0]
+            return filter_stress(vowel,to_filter='1')[0]
 
 
 # Return all possible consecutive tuples length n from list
@@ -249,7 +250,7 @@ def get_words(datafile):
     lines = [line_split(line) for line in datafile]
     words = pd.DataFrame(data=lines, columns=('word', 'pronunciation'))
     words['pn_list'] = words.pronunciation.apply(str.split)
-    words['destressed_pn_list'] = words.pronunciation.apply(filter_stress)
+    words['destressed_pn_list'] = words.pronunciation.apply(filter_stress, args=('[012]',))
     words['primary_stress_map'] = words.pn_list.apply(stress_map)
     words['secondary_stress_map'] = words.pn_list.apply(stress_map, stress='2')
     words['vowel_map'] = words.destressed_pn_list.apply(phoneme_map, args=(vowels,))
@@ -345,13 +346,16 @@ def get_priors(words):
     #                                    columns=['destressed_ngram', 'destressed_ngram_count'])
     #destressed_ngrams_df = destressed_ngrams_df.set_index('destressed_ngram', drop=False)
 
-    # Generate Dataframe with all ngram possibiities and get counts, flag if primary stress in sequence
+    # Generate Dataframe with all stressed ngram possibiities and collapse into families and get counts
     ngrams = get_ngrams_set(words.pn_list)
     ngram_df = pd.DataFrame(list(ngrams.items()), columns=['ngram', 'ngram_count'])
     # Return True is sequence has primary stress in it
     ngram_df['Is_Primary'] = ngram_df.ngram.apply(is_primary)
-    ngram_df = ngram_df.query('Is_Primary == True').set_index('ngram', drop=False)
-    print(collapse_ngrams(ngram_df,'ngram'))
+    ngram_df = collapse_ngrams(ngram_df.query('Is_Primary == True').set_index('ngram', drop=False),'ngram')
+
+    # Generate all destressed ngram possibilities from the above caclulated ngram families
+    destressed_ngrams = ngram_df['ngram_family'].apply(filter_stress, args=('[012]',)).unique().tolist()
+    print(destressed_ngrams)
     #ngram_df['destressed_ngram'] = ngram_df.ngram.apply(filter_stress)
     #ngram_df.destressed_ngram = ngram_df.destressed_ngram.apply(as_tuple)
     #ngram_df = ngram_df.query('Is_Primary == True').set_index('destressed_ngram')
