@@ -281,7 +281,7 @@ def get_ngrams(pronunciation_list, length):
 
 
 # Develop set of all possible ngrams
-def get_ngrams_set(phoneme_series):
+def get_ngrams_dict(phoneme_series):
     ngrams = {}
     max_length = max(phoneme_series.str.len())
     for i in range(2, max_length + 1):
@@ -324,6 +324,9 @@ def has_ngram(ngram, ngram_set):
 def in_family(family, ngram):
     return family == ngram[0:len(family)]
 
+# Apply function over index
+def apply_index(row, func):
+    return func(row.name)
 
 # Add series to data frame which include the smallest ngram within a larger ngram
 def collapse_ngrams(ngram_df, column):
@@ -340,28 +343,35 @@ def collapse_ngrams(ngram_df, column):
 
 
 def get_priors(words):
-    # Generate Dataframe with all destressed ngram possibilities and get counts
-    #destressed_ngrams = get_ngrams_set(words.destressed_pn_list)
-    #destressed_ngrams_df = pd.DataFrame(list(destressed_ngrams.items()),
-    #                                    columns=['destressed_ngram', 'destressed_ngram_count'])
-    #destressed_ngrams_df = destressed_ngrams_df.set_index('destressed_ngram', drop=False)
-
     # Generate Dataframe with all stressed ngram possibiities and collapse into families and get counts
-    ngrams = get_ngrams_set(words.pn_list)
+    ngrams = get_ngrams_dict(words.pn_list)
     ngram_df = pd.DataFrame(list(ngrams.items()), columns=['ngram', 'ngram_count'])
-    # Return True is sequence has primary stress in it
+
+    # Return True is sequence has primary stress in it, drop primary stressed ngrams
     ngram_df['Is_Primary'] = ngram_df.ngram.apply(is_primary)
     ngram_df = collapse_ngrams(ngram_df.query('Is_Primary == True').set_index('ngram', drop=False),'ngram')
 
-    # Generate all destressed ngram possibilities from the above caclulated ngram families
-    destressed_ngrams = ngram_df['ngram_family'].apply(filter_stress, args=('[012]',)).unique().tolist()
-    print(destressed_ngrams)
-    #ngram_df['destressed_ngram'] = ngram_df.ngram.apply(filter_stress)
-    #ngram_df.destressed_ngram = ngram_df.destressed_ngram.apply(as_tuple)
-    #ngram_df = ngram_df.query('Is_Primary == True').set_index('destressed_ngram')
+    # De-stress newly created ngram families
+    destressed_primary_ngrams = ngram_df['ngram_family'].apply(filter_stress, args=('[012]',)).unique()
+
+    # Return a dict of all possible ngrams and the count of their occurrence
+    destressed_ngrams_dict = get_ngrams_dict(words.destressed_pn_list)
+    destressed_ngrams_df = pd.DataFrame.from_dict(destressed_ngrams_dict, orient='index')
+    destressed_ngrams_df[1] = destressed_ngrams_df.index
+    destressed_ngrams_df.columns = ['destressed_count','destressed_families']
+
+    # Gather counts for ngram family
+    columns = ['ngram_family', 'ngram_count']
+    ngram_prior = pd.DataFrame(ngram_df[columns])
+    ngram_prior = ngram_prior.groupby(by='ngram_family').sum()
+    ngram_prior['destressed_families'] = ngram_prior.index
+    ngram_prior['destressed_families'] = ngram_prior.destressed_families.apply(filter_stress, args=('[012]',))
+    print(ngram_prior.head())
+    print(destressed_ngrams_df.head())
 
     # Join
-    #ngram_priors = ngram_df.join(destressed_ngrams_df)
+    ngram_prior = pd.merge(ngram_prior,destressed_ngrams_df)
+    print(ngram_prior.head())
 
     # Get probability that sequence if exists will be stressed
     #ngram_priors['ngram_stress_probability'] = ngram_priors.ngram_count / ngram_priors.destressed_ngram_count
