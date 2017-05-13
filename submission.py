@@ -104,6 +104,9 @@ prefixes = (
 
 suffixes_set = {suffix.upper() for suffix in suffixes}
 prefixes_set = {prefix.upper() for prefix in prefixes}
+
+ion_suffixes = {suffix for suffix in suffixes_set if suffix[0] in 'IU'}
+
 vector_map = vowels + consonants
 
 ################# helper functions #########
@@ -228,6 +231,16 @@ def line_split(line):
     line = line.split(':')
     return line[0], line[1]
 
+# Check if word has a suffix starting with I or U
+def ion_rule(word):
+    for i in reversed(range(len(word))):
+        if word[i:] in ion_suffixes:
+            return 1
+    return 0
+
+
+
+
 
 '''
 Dataframe to hold list of words
@@ -263,12 +276,16 @@ def get_words(datafile):
     # words['type_tag'] = words.word.apply(get_pos_tag)
     words['1st_letter_idx'] = words.word.apply(get_first_letter_idx)
     words['phoneme_length'] = words.pn_list.str.len()
-    # words['prefix'] = words.word.apply(check_prefix)
-    # words['suffix'] = words.word.apply(check_suffix)
+    words['prefix'] = words.word.apply(check_prefix)
+    words['suffix'] = words.word.apply(check_suffix)
+    # Rule 2
+    words['has_affix'] = (words.prefix + words.suffix > 0).apply(int)
+    # Rule 3
+    words['ion_rule'] = words.word.apply(ion_rule)
     # words['prefix_suffix_vector'] = words.
     # words['primary_stress_idx'] = words.primary_stress_map.apply(get_stress_position)
     words['stressed_vowel'] = words.pn_list.apply(get_stressed_vowel)
-    words['ngrams'] = words.pn_list.apply(get_all_ngrams)
+    #words['ngrams'] = words.pn_list.apply(get_all_ngrams)
 
     # Unpack vector map into single columns
     # unpacked_vector_map = pd.DataFrame.from_records(words.vector_map.tolist(),columns=vector_map)
