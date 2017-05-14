@@ -285,9 +285,9 @@ def get_ngram_possibilities(pronunciation_list, length):
 
 # Develop deque of all possible ngrams
 def get_all_ngrams(pn_list):
-    ngrams = deque()
+    ngrams = set()
     for i in range(2,len(pn_list) + 1):
-        ngrams.extend(get_ngram_possibilities(pn_list,i))
+        ngrams.update(get_ngram_possibilities(pn_list,i))
     return ngrams
 
 # Check if ngram in list
@@ -319,9 +319,11 @@ def has_ngram(ngram, ngram_set):
 def in_family(family, ngram):
     return family == ngram[0:len(family)]
 
+
 # Apply function over index
 def apply_index(row, func):
     return func(row.name)
+
 
 # Use string matching to check if ngram in ngram_base
 def has_subngram(ngram, ngram_base):
@@ -331,6 +333,8 @@ def has_subngram(ngram, ngram_base):
 
 
 # Add series to data frame which include the smallest ngram within a larger ngram
+# Change this method to loop through largest sequences and check for subsequences
+# If a subsequence is found remove old and add the smaller subsequence with count to dataframe for group by
 def collapse_ngrams(ngram_lists):
     ngrams = deque()
     # Pack all possibilities into deque
@@ -342,7 +346,26 @@ def collapse_ngrams(ngram_lists):
     ngrams_df['is_primary'] = ngrams_df.index.map(is_primary)
     return ngrams_df.query('is_primary == True').sort_values(by='ngram_counts', ascending=False)
 
-# Return dict key = ngram families, count = Total times ngram is developed for set of words
+# Get top ngrams whilst ensuring coverage of whole set
+def get_top_ngrams(words,ngram_counts):
+    coverage_df = pd.DataFrame(words.ngrams,columns=['ngrams'])
+    covering_ngram = []
+    covering_counts = []
+    for ngram,count in zip(ngram_counts.index,ngram_counts.ngram_counts):
+        coverage_df['covered'] = coverage_df.ngrams.isin(ngram)
+        covered = coverage_df.query('covered == True')
+        if len(coverage_df) > 0:
+            print(1)
+            covering_ngram.append(ngram)
+            covering_counts.append(count)
+            coverage_df = coverage_df - covered
+        if sum(covering_counts) > 50000:
+            covering_df = pd.DataFrame(columns=['ngram','count'])
+            covering_df['ngram'] = covering_ngram
+            covering_df['count'] = covering_counts
+            return covering_df
+
+# Return dict key = ngram families, count = Total times ngram is developed for set of words NOTUSED
 def get_ngram_counts(ngram_families,possible_ngrams):
     ngram_counts = {family:0 for family in ngram_families}
     for possible in possible_ngrams:
@@ -354,6 +377,9 @@ def get_ngram_counts(ngram_families,possible_ngrams):
 
 def train(data, classifier_file):  # do not change the heading of the function
     words = get_words(data)
+    ngram_counts = collapse_ngrams(words.ngrams)
+    covering = get_top_ngrams(words,ngram_counts)
+
     return words
 
 
