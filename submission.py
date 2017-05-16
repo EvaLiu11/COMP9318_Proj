@@ -102,6 +102,17 @@ prefixes = (
 'vict', 'vinc', 'vid', 'vis', 'viv', 'vita', 'vivi'
 , 'voc', 'voke', 'vol', 'volcan', 'volv', 'volt', 'vol', 'vor', 'with', 'zo')
 
+classifications = { '10'  : 0,
+                    '100' : 0,
+                    '1000': 0,
+                    '01'  : 3,
+                    '001' : 3,
+                    '0001': 3,
+                    '010' : 1,
+                    '0100': 1,
+                    '0010': 2
+                    }
+
 suffixes_set = {suffix.upper() for suffix in suffixes}
 prefixes_set = {prefix.upper() for prefix in prefixes}
 vector_map = vowels + consonants
@@ -224,9 +235,36 @@ def is_primary(sequence):
     return False
 
 
+# Return classification for pn_list
+def get_classification(pn_list):
+    vowels = str()
+    for pn in pn_list:
+        if pn in consonants:
+            continue
+        elif '1' in pn:
+            vowels += '1'
+        elif '0' in pn or '2' in pn:
+            vowels += '0'
+
+    return classifications[vowels]
+
+
+# Return the index of the stressed vowel based on classification
+def get_classsification_index(df):
+    vowel_idx = [idx.start() for idx in re.finditer('1',df.vowel_map_string)]
+    if df.classification < 3:
+        return vowel_idx[df.classification]
+    else:
+        return vowel_idx[-1]
+
+def to_string(list_to_convert):
+    return ''.join([str(x) for x in list_to_convert])
+
+
 def line_split(line):
     line = line.split(':')
     return line[0], line[1]
+
 
 
 '''
@@ -254,13 +292,19 @@ def get_words(datafile):
     words['pn_list'] = words.pronunciation.apply(str.split)
     words['destressed_pn_list'] = words.pronunciation.apply(filter_stress, args=('[012]',))
     words['primary_stress_map'] = words.pn_list.apply(stress_map)
+    words['primary_stress_index'] = words.primary_stress_map.apply(list.index, args=(1,))
     words['secondary_stress_map'] = words.pn_list.apply(stress_map, stress='2')
     words['vowel_map'] = words.destressed_pn_list.apply(phoneme_map, args=(vowels,))
+    words['vowel_map_string'] = words.vowel_map.apply(to_string)
     words['consonant_map'] = words.destressed_pn_list.apply(phoneme_map, args=(consonants,))
     words['vector_map'] = words.destressed_pn_list.apply(iterable_map, args=(vector_map,))
     words['vowel_count'] = words.vowel_map.apply(np.sum)
+    words['classification'] = words.pn_list.apply(get_classification)
     words['consonant_count'] = words.consonant_map.apply(np.sum)
-    # words['type_tag'] = words.word.apply(get_pos_tag)
+    words['primary_stress_index'] = words.primary_stress_map.apply(list.index, args=(1,))
+    words['classification_index'] = words.apply(get_classsification_index, axis=1)
+    words['secondary_stress_map'] = words.pn_list.apply(stress_map, stress='2')
+    #words['type_tag'] = words.word.apply(get_pos_tag)
     words['1st_letter_idx'] = words.word.apply(get_first_letter_idx)
     words['phoneme_length'] = words.pn_list.str.len()
     # words['prefix'] = words.word.apply(check_prefix)
@@ -269,6 +313,7 @@ def get_words(datafile):
     # words['primary_stress_idx'] = words.primary_stress_map.apply(get_stress_position)
     words['stressed_vowel'] = words.pn_list.apply(get_stressed_vowel)
     words['ngrams'] = words.pn_list.apply(get_all_ngrams)
+    words['ngram_counts'] = words.ngrams.apply(Counter)
 
     # Unpack vector map into single columns
     # unpacked_vector_map = pd.DataFrame.from_records(words.vector_map.tolist(),columns=vector_map)
@@ -284,9 +329,11 @@ def get_ngram_possibilities(pronunciation_list, length):
 
 
 # Develop deque of all possible ngrams
-def get_all_ngrams(pn_list):
+def get_all_ngrams(pn_list,restrict_length = None):
     ngrams = set()
-    for i in range(2,len(pn_list) + 1):
+    if not restrict_length:
+        restrict_length = len(pn_list)
+    for i in range(2,restrict_length + 1):
         ngrams.update(get_ngram_possibilities(pn_list,i))
     return ngrams
 
@@ -348,22 +395,21 @@ def collapse_ngrams(ngram_lists):
 
 # Get top ngrams whilst ensuring coverage of whole set
 def get_top_ngrams(words,ngram_counts):
-    coverage_df = pd.DataFrame(words.ngrams,columns=['ngrams'])
-    covering_ngram = []
-    covering_counts = []
+    possible_ngrams_df = pd.DataFrame(words.ngrams,columns=['ngrams'])
+    ngram_family = []
+    ngram_family_counts = []
     for ngram,count in zip(ngram_counts.index,ngram_counts.ngram_counts):
-        coverage_df['covered'] = coverage_df.ngrams.isin(ngram)
-        covered = coverage_df.query('covered == True')
-        if len(coverage_df) > 0:
-            print(1)
-            covering_ngram.append(ngram)
-            covering_counts.append(count)
-            coverage_df = coverage_df - covered
-        if sum(covering_counts) > 50000:
-            covering_df = pd.DataFrame(columns=['ngram','count'])
-            covering_df['ngram'] = covering_ngram
-            covering_df['count'] = covering_counts
-            return covering_df
+        possible_ngrams_df['spanned'] = possible_ngrams_df.ngrams.isin(ngram)
+        spanning_ngrams = possible_ngrams_df.query('spanned == True')
+        if len(possible_ngrams_df) > 0:
+            ngram_family.append(ngram)
+            ngram_family_counts.append(count)
+            possible_ngrams_df = possible_ngrams_df - spanning_ngrams
+        if sum(ngram_family_counts) > 50000:
+            spanning_ngram_families = pd.DataFrame(columns=['ngram','count'])
+            spanning_ngram_families['ngram'] = ngram_family
+            spanning_ngram_families['count'] = ngram_family_counts
+            return spanning_ngram_families
 
 # Return dict key = ngram families, count = Total times ngram is developed for set of words NOTUSED
 def get_ngram_counts(ngram_families,possible_ngrams):
@@ -373,12 +419,20 @@ def get_ngram_counts(ngram_families,possible_ngrams):
             ngram_counts[possible] += 1
     return ngram_counts
 
+
+# Add ngram family to word frame
+def add_ngram_family(words,ngram_families):
+    for ngram in ngram_families:
+        pass
+
+
+
 ################# training #################
 
 def train(data, classifier_file):  # do not change the heading of the function
     words = get_words(data)
-    ngram_counts = collapse_ngrams(words.ngrams)
-    covering = get_top_ngrams(words,ngram_counts)
+    #ngram_counts = collapse_ngrams(words.ngrams)
+    #covering = get_top_ngrams(words,ngram_counts)
 
     return words
 
