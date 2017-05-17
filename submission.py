@@ -3,12 +3,39 @@ import pandas as pd
 import numpy as np
 import string
 from collections import deque,Counter
-from sklearn.utils.extmath import cartesian
+from sklearn.naive_bayes import MultinomialNB,BernoulliNB
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_extraction import DictVectorizer
 import re
 import nltk
 import pickle
 
-from sklearn.neighbors import KNeighborsClassifier
+
+################# training #################
+
+def train(data, classifier_file):  # do not change the heading of the function
+    words = word_data(data)
+    mb_clf = classifier(MultinomialNB)
+    
+    train_X = words.df.ngram_counts
+    train_Y = words.df.classification
+    
+    mb_clf.train(train_X, train_Y)
+    save_Pickle(mb_clf,classifier_file)    
+    
+    return
+
+
+################# testing #################
+
+def test(data, classifier_file):  # do not change the heading of the function
+    clf = get_Pickle(classifier_file)
+    test_words = word_data(data)
+    test_words.set_predicted_classes(clf.predict_classifications(test_words.df.ngram_counts))
+    
+    return test_words.df.predicted_primary_index.tolist()
+    
+    
 
 ################# helper data ##############
 
@@ -20,88 +47,8 @@ vowels = ('AA', 'AE', 'AH', 'AO', 'AW', 'AY', 'EH', 'ER', 'EY', 'IH'
 consonants = ('P', 'B', 'CH', 'D', 'DH', 'F', 'G', 'HH', 'JH', 'K', 'L', 'M', 'N',
               'NG', 'R', 'S', 'SH', 'T', 'TH', 'V', 'W', 'Y', 'Z', 'ZH')
 
-suffixes = (
-'inal', 'tion', 'sion', 'osis', 'oon', 'sce', 'que', 'ette', 'eer', 'ee', 'aire', 'able', 'ible', 'acy', 'cy', 'ade',
-'age', 'al', 'al', 'ial', 'ical', 'an', 'ance', 'ence',
-'ancy', 'ency', 'ant', 'ent', 'ant', 'ent', 'ient', 'ar', 'ary', 'ard', 'art', 'ate', 'ate', 'ate', 'ation', 'cade',
-'drome', 'ed', 'ed', 'en', 'en', 'ence', 'ency', 'er', 'ier',
-'er', 'or', 'er', 'or', 'ery', 'es', 'ese', 'ies', 'es', 'ies', 'ess', 'est', 'iest', 'fold', 'ful', 'ful', 'fy', 'ia',
-'ian', 'iatry', 'ic', 'ic', 'ice', 'ify', 'ile',
-'ing', 'ion', 'ish', 'ism', 'ist', 'ite', 'ity', 'ive', 'ive', 'ative', 'itive', 'ize', 'less', 'ly', 'ment', 'ness',
-'or', 'ory', 'ous', 'eous', 'ose', 'ious', 'ship', 'ster',
-'ure', 'ward', 'wise', 'ize', 'phy', 'ogy')
 
-prefixes = (
-'ac', 'ad', 'af', 'ag', 'al', 'an', 'ap', 'as', 'at', 'an', 'ab', 'abs', 'acer', 'acid', 'acri', 'act', 'ag', 'acu',
-'aer', 'aero', 'ag', 'agi',
-'ig', 'act', 'agri', 'agro', 'alb', 'albo', 'ali', 'allo', 'alter', 'alt', 'am', 'ami', 'amor', 'ambi', 'ambul', 'ana',
-'ano', 'andr', 'andro', 'ang',
-'anim', 'ann', 'annu', 'enni', 'ante', 'anthrop', 'anti', 'ant', 'anti', 'antico', 'apo', 'ap', 'aph', 'aqu', 'arch',
-'aster', 'astr', 'auc', 'aug',
-'aut', 'aud', 'audi', 'aur', 'aus', 'aug', 'auc', 'aut', 'auto', 'bar', 'be', 'belli', 'bene', 'bi', 'bine', 'bibl',
-'bibli', 'biblio', 'bio', 'bi',
-'brev', 'cad', 'cap', 'cas', 'ceiv', 'cept', 'capt', 'cid', 'cip', 'cad', 'cas', 'calor', 'capit', 'capt', 'carn',
-'cat', 'cata', 'cath', 'caus', 'caut'
-, 'cause', 'cuse', 'cus', 'ceas', 'ced', 'cede', 'ceed', 'cess', 'cent', 'centr', 'centri', 'chrom', 'chron', 'cide',
-'cis', 'cise', 'circum', 'cit',
-'civ', 'clam', 'claim', 'clin', 'clud', 'clus claus', 'co', 'cog', 'col', 'coll', 'con', 'com', 'cor', 'cogn', 'gnos',
-'com', 'con', 'contr', 'contra',
-'counter', 'cord', 'cor', 'cardi', 'corp', 'cort', 'cosm', 'cour', 'cur', 'curr', 'curs', 'crat', 'cracy', 'cre',
-'cresc', 'cret', 'crease', 'crea',
-'cred', 'cresc', 'cret', 'crease', 'cru', 'crit', 'cur', 'curs', 'cura', 'cycl', 'cyclo', 'de', 'dec', 'deca', 'dec',
-'dign', 'dei', 'div', 'dem', 'demo',
-'dent', 'dont', 'derm', 'di', 'dy', 'dia', 'dic', 'dict', 'dit', 'dis', 'dif', 'dit', 'doc', 'doct', 'domin', 'don',
-'dorm', 'dox', 'duc', 'duct', 'dura',
-'dynam', 'dys', 'ec', 'eco', 'ecto', 'en', 'em', 'end', 'epi', 'equi', 'erg', 'ev', 'et', 'ex', 'exter', 'extra',
-'extro', 'fa', 'fess', 'fac', 'fact',
-'fec', 'fect', 'fic', 'fas', 'fea', 'fall', 'fals', 'femto', 'fer', 'fic', 'feign', 'fain', 'fit', 'feat', 'fid', 'fid',
-'fide', 'feder', 'fig', 'fila',
-'fili', 'fin', 'fix', 'flex', 'flect', 'flict', 'flu', 'fluc', 'fluv', 'flux', 'for', 'fore', 'forc', 'fort', 'form',
-'fract', 'frag',
-'frai', 'fuge', 'fuse', 'gam', 'gastr', 'gastro', 'gen', 'gen', 'geo', 'germ', 'gest', 'giga', 'gin', 'gloss', 'glot',
-'glu', 'glo', 'gor', 'grad', 'gress',
-'gree', 'graph', 'gram', 'graf', 'grat', 'grav', 'greg', 'hale', 'heal', 'helio', 'hema', 'hemo', 'her', 'here', 'hes',
-'hetero', 'hex', 'ses', 'sex', 'homo',
-'hum', 'human', 'hydr', 'hydra', 'hydro', 'hyper', 'hypn', 'an', 'ics', 'ignis', 'in', 'im', 'in', 'im', 'il', 'ir',
-'infra', 'inter', 'intra', 'intro', 'ty',
-'jac', 'ject', 'join', 'junct', 'judice', 'jug', 'junct', 'just', 'juven', 'labor', 'lau', 'lav', 'lot', 'lut', 'lect',
-'leg', 'lig', 'leg', 'levi', 'lex',
-'leag', 'leg', 'liber', 'liver', 'lide', 'liter', 'loc', 'loco', 'log', 'logo', 'ology', 'loqu', 'locut', 'luc', 'lum',
-'lun', 'lus', 'lust', 'lude', 'macr',
-'macer', 'magn', 'main', 'mal', 'man', 'manu', 'mand', 'mania', 'mar', 'mari', 'mer', 'matri', 'medi', 'mega', 'mem',
-'ment', 'meso', 'meta', 'meter', 'metr',
-'micro', 'migra', 'mill', 'kilo', 'milli', 'min', 'mis', 'mit', 'miss', 'mob', 'mov', 'mot', 'mon', 'mono', 'mor',
-'mort', 'morph', 'multi', 'nano', 'nasc',
-'nat', 'gnant', 'nai', 'nat', 'nasc', 'neo', 'neur', 'nom', 'nom', 'nym', 'nomen', 'nomin', 'non', 'non', 'nov', 'nox',
-'noc', 'numer', 'numisma', 'ob', 'oc',
-'of', 'op', 'oct', 'oligo', 'omni', 'onym', 'oper', 'ortho', 'over', 'pac', 'pair', 'pare', 'paleo', 'pan', 'para',
-'pat', 'pass', 'path', 'pater', 'patr',
-'path', 'pathy', 'ped', 'pod', 'pedo', 'pel', 'puls', 'pend', 'pens', 'pond', 'per', 'peri', 'phage', 'phan', 'phas',
-'phen', 'fan', 'phant', 'fant', 'phe',
-'phil', 'phlegma', 'phobia', 'phobos', 'phon', 'phot', 'photo', 'pico', 'pict', 'plac', 'plais', 'pli', 'ply', 'plore',
-'plu', 'plur', 'plus', 'pneuma',
-'pneumon', 'pod', 'poli', 'poly', 'pon', 'pos', 'pound', 'pop', 'port', 'portion', 'post', 'pot', 'pre', 'pur',
-'prehendere', 'prin', 'prim', 'prime',
-'pro', 'proto', 'psych', 'punct', 'pute', 'quat', 'quad', 'quint', 'penta', 'quip', 'quir', 'quis', 'quest', 'quer',
-'re', 'reg', 'recti', 'retro', 'ri', 'ridi',
-'risi', 'rog', 'roga', 'rupt', 'sacr', 'sanc', 'secr', 'salv', 'salu', 'sanct', 'sat', 'satis', 'sci', 'scio',
-'scientia', 'scope', 'scrib', 'script', 'se',
-'sect', 'sec', 'sed', 'sess', 'sid', 'semi', 'sen', 'scen', 'sent', 'sens', 'sept', 'sequ', 'secu', 'sue', 'serv',
-'sign', 'signi', 'simil', 'simul', 'sist', 'sta',
-'stit', 'soci', 'sol', 'solus', 'solv', 'solu', 'solut', 'somn', 'soph', 'spec', 'spect', 'spi', 'spic', 'sper',
-'sphere', 'spir', 'stand', 'stant', 'stab',
-'stat', 'stan', 'sti', 'sta', 'st', 'stead', 'strain', 'strict', 'string', 'stige', 'stru', 'struct', 'stroy', 'stry',
-'sub', 'suc', 'suf', 'sup', 'sur', 'sus',
-'sume', 'sump', 'super', 'supra', 'syn', 'sym', 'tact', 'tang', 'tag', 'tig', 'ting', 'tain', 'ten', 'tent', 'tin',
-'tect', 'teg', 'tele', 'tem', 'tempo', 'ten',
-'tin', 'tain', 'tend', 'tent', 'tens', 'tera', 'term', 'terr', 'terra', 'test', 'the', 'theo', 'therm', 'thesis',
-'thet', 'tire', 'tom', 'tor', 'tors', 'tort'
-, 'tox', 'tract', 'tra', 'trai', 'treat', 'trans', 'tri', 'trib', 'tribute', 'turbo', 'typ', 'ultima', 'umber',
-'umbraticum', 'un', 'uni', 'vac', 'vade', 'vale',
-'vali', 'valu', 'veh', 'vect', 'ven', 'vent', 'ver', 'veri', 'verb', 'verv', 'vert', 'vers', 'vi', 'vic', 'vicis',
-'vict', 'vinc', 'vid', 'vis', 'viv', 'vita', 'vivi'
-, 'voc', 'voke', 'vol', 'volcan', 'volv', 'volt', 'vol', 'vor', 'with', 'zo')
-
+# Classification Map
 classifications = { '10'  : 0,
                     '100' : 0,
                     '1000': 0,
@@ -113,17 +60,117 @@ classifications = { '10'  : 0,
                     '0010': 2
                     }
 
-suffixes_set = {suffix.upper() for suffix in suffixes}
-prefixes_set = {prefix.upper() for prefix in prefixes}
 vector_map = vowels + consonants
 
+################# classes ##################
+
+'''
+
+word_data       = Class to hold word data and perform all requisite pre-processing
+
+    Attributes
+lines           = List of word and stressed phonemes
+df              = dataframe to hold and process word data
+pn_list         = list of phonemes
+vowel_map       = 2-4 bit string depicting location of primary stress
+classifications = Group Index of stressed vowel, 0 is 1st, 3 is last irrespective of vowel count/word length
+                  1 and 2 are then 2nd and 3rd respecively.
+ngrams          = All possible ngrams of pn_list
+ngrams_counts   = Dict object of ngrams 
+
+
+'''
+class word_data(object):
+    def __init__(self,data):
+        self.lines = [line_split(line) for line in data]
+        self.df = pd.DataFrame(data=self.lines, columns=('word', 'pronunciation'))
+        self.df['pn_list'] = self.df.pronunciation.apply(str.split)
+        self.df['destressed_pn_list'] = self.df.pronunciation.apply(filter_stress, args=('[012]',))
+        self.df['vowel_map'] = self.df.destressed_pn_list.apply(phoneme_map, args=(vowels,))
+        self.df['vowel_map_string'] = self.df.vowel_map.apply(to_string)
+        self.df['stress_map'] = self.df.pn_list.apply(get_stress_map)
+        self.df['classification'] = self.df.stress_map.apply(get_classification)
+        self.df['primary_stress_index'] = self.df.apply(get_classsification_index,args=('classification',) ,axis=1)
+        self.df['ngrams'] = self.df.pn_list.apply(get_all_ngrams)
+        self.df['ngram_counts'] = self.df.ngrams.apply(Counter)
+        self.df['destressed_ngrams'] = self.df.destressed_pn_list.apply(get_all_ngrams)
+        self.df['destressed_ngram_count'] = self.df.destressed_ngrams.apply(Counter)
+        
+    
+    def set_predicted_classes(self,classes):
+        self.df['predicted_classes'] = classes
+        self.df['predicted_primary_index'] = self.df.apply(get_classsification_index,args=('predicted_classes',), axis=1)
+        
+    
+'''
+classifier      = Class to hold classifier and training/testing/prediction methods
+
+    Attributes
+clf             = Passed in Classifier
+encoder         = LabelEncoder for classes
+vectorizer      = DictVectorizer (Sparse Matrix) to hold features
+train_X         = Vectorized training features
+train_Y         = Label Encoded training classifications
+test_X          = 
+
+
+    Methods
+train           = Encode Features and Classifications, Train Classifier
+test
+
+'''
+
+class classifier(object):
+    def __init__(self,classifier,*args,**kwargs):
+        self.clf = classifier()
+        self.encoder = LabelEncoder()
+        self.vectorizer = DictVectorizer(dtype=int, sparse=True)
+    
+    def train(self,X,Y):
+        self.train_X = self.vectorizer.fit_transform(X.tolist())
+        self.train_Y = self.encoder.fit_transform(Y)
+        self.clf.fit(self.train_X,self.train_Y)
+
+    
+    def _encode_test_features(self,X):
+        return self.vectorizer.transform(X.tolist())
+
+    
+    def predict_classifications(self,X):
+        predicted_Y = self.clf.predict(self._encode_test_features(X))
+        return predicted_Y
+    
+        
+        
 ################# helper functions #########
 
+# Pickler
+def save_Pickle(obj, file):
+    with open(file,'wb') as f:
+        pickle.dump(obj,f)
+    f.close()
+    
+def get_Pickle(file):
+    with open(file,'rb') as f:
+        obj = pickle.load(f)
+    f.close()
+    return obj
+    
 
-def read_data(file_path):
-    with open(file_path) as f:
-        lines = f.read().splitlines()
-    return lines
+
+# Return all ngrams of particular length
+def get_ngram_possibilities(pronunciation_list, length):
+    return tuple(zip(*(pronunciation_list[i:] for i in range(length))))
+
+
+# Develop deque of all possible ngrams
+def get_all_ngrams(pn_list,restrict_length = None):
+    ngrams = set()
+    if not restrict_length:
+        restrict_length = len(pn_list)
+    for i in range(2,restrict_length + 1):
+        ngrams.update(get_ngram_possibilities(pn_list,i))
+    return ngrams
 
 
 # Convert list to tuple
@@ -236,7 +283,7 @@ def is_primary(sequence):
 
 
 # Return classification for pn_list
-def get_classification(pn_list):
+def get_stress_map(pn_list):
     vowels = str()
     for pn in pn_list:
         if pn in consonants:
@@ -245,15 +292,18 @@ def get_classification(pn_list):
             vowels += '1'
         elif '0' in pn or '2' in pn:
             vowels += '0'
+    return vowels
 
-    return classifications[vowels]
-
+def get_classification(vowel_map):
+    return classifications[vowel_map]
 
 # Return the index of the stressed vowel based on classification
-def get_classsification_index(df):
+def get_classsification_index(df,classification_column):
     vowel_idx = [idx.start() for idx in re.finditer('1',df.vowel_map_string)]
-    if df.classification < 3:
-        return vowel_idx[df.classification]
+    if df[classification_column] > len(vowel_idx) - 1:
+        return vowel_idx[-1]
+    if df[classification_column] < 3:
+        return vowel_idx[df[classification_column]]
     else:
         return vowel_idx[-1]
 
@@ -288,7 +338,7 @@ suffix: 1 if suffix exists 0 otherwise
 
 def get_words(datafile):
     lines = [line_split(line) for line in datafile]
-    words = pd.DataFrame(data=lines, columns=('word', 'pronunciation'))
+    
     words['pn_list'] = words.pronunciation.apply(str.split)
     words['destressed_pn_list'] = words.pronunciation.apply(filter_stress, args=('[012]',))
     words['primary_stress_map'] = words.pn_list.apply(stress_map)
@@ -320,124 +370,3 @@ def get_words(datafile):
     # words = pd.concat([words, unpacked_vector_map],axis=1)
     return words
 
-
-################# ngrams ###################
-
-# Return all ngrams of particular length
-def get_ngram_possibilities(pronunciation_list, length):
-    return tuple(zip(*(pronunciation_list[i:] for i in range(length))))
-
-
-# Develop deque of all possible ngrams
-def get_all_ngrams(pn_list,restrict_length = None):
-    ngrams = set()
-    if not restrict_length:
-        restrict_length = len(pn_list)
-    for i in range(2,restrict_length + 1):
-        ngrams.update(get_ngram_possibilities(pn_list,i))
-    return ngrams
-
-# Check if ngram in list
-def in_list(pn_list, ngram):
-    if pn_list in ngram:
-        return 1
-    return 0
-
-
-# Check if ngram has primary stress
-def is_primary(ngram):
-    for phoneme in ngram:
-        if '1' in phoneme:
-            return True
-    return False
-
-
-# Check if there is a smaller ngram in set
-def has_ngram(ngram, ngram_set):
-    # Do not check sequences of length 2 or the final as they will obviously be in the set
-    for i in range(2, len(ngram)):
-        subsequence = ngram[0:i]
-        if subsequence in ngram_set:
-            return True
-    return False
-
-
-# Return true if ngram in family
-def in_family(family, ngram):
-    return family == ngram[0:len(family)]
-
-
-# Apply function over index
-def apply_index(row, func):
-    return func(row.name)
-
-
-# Use string matching to check if ngram in ngram_base
-def has_subngram(ngram, ngram_base):
-    ngram = str(ngram).strip('()')
-    ngram_base = str(ngram_base).strip('()')
-    return ngram in ngram_base
-
-
-# Add series to data frame which include the smallest ngram within a larger ngram
-# Change this method to loop through largest sequences and check for subsequences
-# If a subsequence is found remove old and add the smaller subsequence with count to dataframe for group by
-def collapse_ngrams(ngram_lists):
-    ngrams = deque()
-    # Pack all possibilities into deque
-    for ngram_list in ngram_lists:
-        ngrams.extend(ngram_list)
-
-    ngrams_df = pd.DataFrame.from_dict(Counter(ngrams),orient='index')
-    ngrams_df = ngrams_df.rename(columns={0:'ngram_counts'})
-    ngrams_df['is_primary'] = ngrams_df.index.map(is_primary)
-    return ngrams_df.query('is_primary == True').sort_values(by='ngram_counts', ascending=False)
-
-# Get top ngrams whilst ensuring coverage of whole set
-def get_top_ngrams(words,ngram_counts):
-    possible_ngrams_df = pd.DataFrame(words.ngrams,columns=['ngrams'])
-    ngram_family = []
-    ngram_family_counts = []
-    for ngram,count in zip(ngram_counts.index,ngram_counts.ngram_counts):
-        possible_ngrams_df['spanned'] = possible_ngrams_df.ngrams.isin(ngram)
-        spanning_ngrams = possible_ngrams_df.query('spanned == True')
-        if len(possible_ngrams_df) > 0:
-            ngram_family.append(ngram)
-            ngram_family_counts.append(count)
-            possible_ngrams_df = possible_ngrams_df - spanning_ngrams
-        if sum(ngram_family_counts) > 50000:
-            spanning_ngram_families = pd.DataFrame(columns=['ngram','count'])
-            spanning_ngram_families['ngram'] = ngram_family
-            spanning_ngram_families['count'] = ngram_family_counts
-            return spanning_ngram_families
-
-# Return dict key = ngram families, count = Total times ngram is developed for set of words NOTUSED
-def get_ngram_counts(ngram_families,possible_ngrams):
-    ngram_counts = {family:0 for family in ngram_families}
-    for possible in possible_ngrams:
-        if possible in ngram_counts:
-            ngram_counts[possible] += 1
-    return ngram_counts
-
-
-# Add ngram family to word frame
-def add_ngram_family(words,ngram_families):
-    for ngram in ngram_families:
-        pass
-
-
-
-################# training #################
-
-def train(data, classifier_file):  # do not change the heading of the function
-    words = get_words(data)
-    #ngram_counts = collapse_ngrams(words.ngrams)
-    #covering = get_top_ngrams(words,ngram_counts)
-
-    return words
-
-
-################# testing #################
-
-def test(data, classifier_file):  # do not change the heading of the function
-    pass  # **replace** this line with your code
