@@ -6,6 +6,7 @@ from collections import deque,Counter
 from sklearn.naive_bayes import MultinomialNB,BernoulliNB
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction import DictVectorizer
+from sklearn.metrics import f1_score,classification_report
 import re
 import nltk
 import pickle
@@ -28,12 +29,22 @@ def train(data, classifier_file):  # do not change the heading of the function
 
 ################# testing #################
 
-def test(data, classifier_file):  # do not change the heading of the function
+def test(data, classifier_file,sample=None,DEBUG=None):  # do not change the heading of the function
     clf = get_Pickle(classifier_file)
     test_words = word_data(data)
-    test_words.set_predicted_classes(clf.predict_classifications(test_words.df.ngram_counts))
     
-    return test_words.df.predicted_primary_index.tolist()
+    if sample:
+        test_words.df = test_words.df.sample(sample)
+    
+    test_words.set_predicted_classes(clf.predict_classifications(test_words.df.ngram_counts))
+    pred = test_words.df.predicted_primary_index.tolist()
+    
+    if DEBUG:
+        print(classification_report(test_words.df.primary_stress_index,pred))
+        print(f1_score(test_words.df.primary_stress_index, pred, average='macro'))
+        
+    
+    return pred
     
     
 
