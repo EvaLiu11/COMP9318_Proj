@@ -2,8 +2,9 @@
 import pandas as pd
 import numpy as np
 import string
-from collections import deque,Counter
-from sklearn.naive_bayes import MultinomialNB,BernoulliNB
+from collections import deque,Counter,OrderedDict
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.metrics import f1_score,classification_report
@@ -11,42 +12,6 @@ import re
 import nltk
 import pickle
 
-
-################# training #################
-
-def train(data, classifier_file):  # do not change the heading of the function
-    words = word_data(data)
-    mb_clf = classifier(MultinomialNB)
-    
-    train_X = words.df.ngram_counts
-    train_Y = words.df.classification
-    
-    mb_clf.train(train_X, train_Y)
-    save_Pickle(mb_clf,classifier_file)    
-    
-    return
-
-
-################# testing #################
-
-def test(data, classifier_file,sample=None,DEBUG=None):  # do not change the heading of the function
-    clf = get_Pickle(classifier_file)
-    test_words = word_data(data)
-    
-    if sample:
-        test_words.df = test_words.df.sample(sample)
-    
-    test_words.set_predicted_classes(clf.predict_classifications(test_words.df.ngram_counts))
-    pred = test_words.df.predicted_primary_index.tolist()
-    
-    if DEBUG:
-        print(classification_report(test_words.df.primary_stress_index,pred))
-        print(f1_score(test_words.df.primary_stress_index, pred, average='macro'))
-        
-    
-    return pred
-    
-    
 
 ################# helper data ##############
 
@@ -72,6 +37,42 @@ classifications = { '10'  : 0,
                     }
 
 vector_map = vowels + consonants
+
+################# training #################
+
+def train(data, classifier_file):  # do not change the heading of the function
+    words = word_data(data)        
+    
+    multi_mb_clf = multi_classifier(MultinomialNB)
+    
+    train_X = words.df.ngram_counts
+    train_Y = words.df.classification
+    
+    multi_mb_clf.train(train_X, train_Y)
+    save_Pickle(multi_mb_clf,classifier_file)    
+    
+    return
+
+
+################# testing #################
+
+def test(data, classifier_file,sample=None,DEBUG=None):  # do not change the heading of the function
+    clf = get_Pickle(classifier_file)
+    test_words = word_data(data)
+    
+    if sample:
+        test_words.df = test_words.df.sample(sample)
+    
+    test_words.set_predicted_classes(clf.predict_classifications(test_words.df.ngram_counts))
+    pred = test_words.df.predicted_primary_index.tolist()
+    
+    if DEBUG:
+        print(classification_report(test_words.df.primary_stress_index,pred))
+        print(f1_score(test_words.df.primary_stress_index, pred, average='macro'))
+        
+    
+    return
+    
 
 ################# classes ##################
 
@@ -132,8 +133,8 @@ test
 '''
 
 class classifier(object):
-    def __init__(self,classifier,*args,**kwargs):
-        self.clf = classifier()
+    def __init__(self,classifier_type,*args,**kwargs):
+        self.clf = classifier_type()
         self.encoder = LabelEncoder()
         self.vectorizer = DictVectorizer(dtype=int, sparse=True)
     
@@ -151,7 +152,63 @@ class classifier(object):
         predicted_Y = self.clf.predict(self._encode_test_features(X))
         return predicted_Y
     
+    def get_prob(self, X):
+        return self.clf.predict_proba(self._encode_test_features(X))
+
+
+'''
+multi_classifier      = Class to hold multiple classifier and training/testing/prediction methods
+
+    Attributes
+Zero            = Classifier for Zero
+One             = Classifier for One
+Two             = Classifier for Two
+Three           = Classifier for Three
+
+    Methods
+
+
+'''
+
+class multi_classifier(object):
+    def __init__(self,classifier_type):
+        self.Zero = classifier(classifier_type)
+        self.One = classifier(classifier_type)
+        self.Two = classifier(classifier_type)
+        self.Three = classifier(classifier_type)
+        self.clfs = OrderedDict({0 : self.Zero,
+                                 1 : self.One,
+                                 2 : self.Two,
+                                 3 : self.Three
+                                 })
+        self.vectorizer = DictVectorizer(dtype=int, sparse=True)
         
+    def train(self,X,Y):
+        for idx,clf in self.clfs.items():
+            Y_bin = [cls == idx for cls in Y]
+            clf.train(X,Y_bin)
+    
+    def _encode_training_features(self,X):
+        self.vectorizer.fit_transform(X.tolist())
+        
+    def _encode_test_features(self,X):
+        return self.vectorizer.fit([X])
+
+    def predict_classifications(self,X):
+        probs = pd.DataFrame()
+        
+        for idx,clf in self.clfs.items():
+            class_probs = clf.get_prob(X)
+            probs[idx] = class_probs.transpose()[1]
+        
+        probs['classification'] = probs.idxmax(axis=1)
+
+        return probs.classification
+            
+            
+            
+        
+    
         
 ################# helper functions #########
 
