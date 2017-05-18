@@ -3,9 +3,8 @@ import pandas as pd
 import numpy as np
 import string
 from collections import deque,Counter,OrderedDict
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, scale, normalize
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.metrics import f1_score,classification_report
 import re
@@ -22,6 +21,23 @@ vowels = ('AA', 'AE', 'AH', 'AO', 'AW', 'AY', 'EH', 'ER', 'EY', 'IH'
 # Consonants Phonemes
 consonants = ('P', 'B', 'CH', 'D', 'DH', 'F', 'G', 'HH', 'JH', 'K', 'L', 'M', 'N',
               'NG', 'R', 'S', 'SH', 'T', 'TH', 'V', 'W', 'Y', 'Z', 'ZH')
+
+strong_suffixes = set(('al','ance', 'ancy', 'ant','ard','ary','àte','auto','ence', 'ency', 'ent',
+                  'ery','est','ial', 'ian' ,'iana','en','ésce','ic','ify','ine','ion', 'tion',
+                  'ity','ive','ory','ous','ual','ure' ,'wide','y','se','ade','e','ee','een',
+                  'eer','ese','esque','ette','eur','ier','oon','que'))
+
+strong_prefixes = set(('ad','co','con','counter','de','di','dis','e','en','ex','in','mid','ob','para','pre','re','sub',
+                  'a','be','with','for')) 
+
+neutral_prefixes=set(('down','fore','mis','over','out','un','under','up','anti','bi','non','pro','tri','contra','counta',
+                   'de','dis','extra','inter','intro','multi','non','post','retro','super','trans','ultra'))
+                  
+neutral_suffixes= set(('able','age','al','ate','ed','en','er','est','ful','hood','ible','ing','ile','ish','ism',
+                   'ist','ize','less','like','ly''man','ment','most','ness','old','s','ship','some','th','ward','wise','y'))
+
+
+                  
 
 suffixes = (
 'inal','ain', 'tion', 'sion', 'osis', 'oon', 'sce', 'que', 'ette', 'eer', 'ee', 'aire', 'able', 'ible', 'acy', 'cy', 'ade',
@@ -105,8 +121,16 @@ prefixes = (
 'vict', 'vinc', 'vid', 'vis', 'viv', 'vita', 'vivi'
 , 'voc', 'voke', 'vol', 'volcan', 'volv', 'volt', 'vol', 'vor', 'with', 'zo')
 
-suffixes_set = {suffix.upper() for suffix in suffixes}
-prefixes_set = {prefix.upper() for prefix in prefixes}
+# Upper Convert set ot upper
+def upper(iterable):
+    return {x.upper() for x in iterable}
+
+neutral_prefixes  = upper(neutral_prefixes)
+neutral_suffixes  = upper(neutral_suffixes)
+strong_prefixes   = upper(strong_prefixes)
+strong_suffixes   = upper(strong_suffixes)
+full_suffixes_set = upper(suffixes)
+full_prefixes_set = upper(prefixes)
 
 
 # Classification Map
@@ -135,7 +159,7 @@ def train(data, classifier_file,multi=None):  # do not change the heading of the
     else:
         classifier_cls = classifier(classifier_type,class_weight='balanced')
     
-    features = ['prefix','suffix','phoneme_length','vowel_count'] + words.type_tags
+    features = ['str_pre','str_suf','neu_pre','neu_suf','prefix','suffix','phoneme_length','vowel_count'] + words.type_tags
     classifier_cls.set_features(features)
     
     train_X = np.array(words.df[features])
@@ -158,6 +182,7 @@ def test(data, classifier_file,sample=None,DEBUG=None):  # do not change the hea
     
     features = classifier_cls.get_features()
     feature_array = np.array(test_words.df[features])
+    
     test_words.set_predicted_classes(classifier_cls.predict_classifications(feature_array))
     pred = test_words.df.predicted_primary_index.tolist()
     
@@ -206,8 +231,14 @@ class word_data(object):
         self.df['ngram_counts'] = self.df.ngrams.apply(Counter)
         self.df['destressed_ngrams'] = self.df.destressed_pn_list.apply(get_all_ngrams)
         self.df['destressed_ngram_counts'] = self.df.destressed_ngrams.apply(Counter)
-        self.df['prefix'] = self.df.word.apply(check_prefix)
-        self.df['suffix'] = self.df.word.apply(check_suffix)
+        self.df['prefix'] = self.df.word.apply(check_prefix,args=(full_prefixes_set,))
+        self.df['suffix'] = self.df.word.apply(check_suffix,args=(full_suffixes_set,))
+        self.df['str_pre'] = self.df.word.apply(check_prefix,args=(strong_prefixes,))
+        self.df['str_suf'] = self.df.word.apply(check_suffix,args=(strong_suffixes,))
+        self.df['neu_pre'] = self.df.word.apply(check_prefix,args=(neutral_prefixes,))
+        self.df['neu_suf'] = self.df.word.apply(check_suffix,args=(neutral_suffixes,))
+        #self.df['Suf_ER'] = self.df.word.apply(check)
+        
         self.df['type_tag'] = self.df.word.apply(get_pos_tag)
         
         self._encode_type_tag(train_type_tags)
@@ -262,6 +293,7 @@ class classifier(object):
     def __init__(self,classifier_type,*args,**kwargs):
         self.clf = classifier_type(**kwargs)
         self.encoder = LabelEncoder()
+        self.scaler = scale
         self.vectorizer = DictVectorizer(dtype=int, sparse=True)
     
     def set_features(self,feature_list):
@@ -272,8 +304,9 @@ class classifier(object):
     
     def train(self,X,Y):
         self.train_X = X
+        self.normalized_train_x = self.scaler(X)
         self.train_Y = self.encoder.fit_transform(Y)
-        self.clf.fit(self.train_X,self.train_Y)
+        self.clf.fit(self.normalized_train_x,self.train_Y)
 
     
     def _encode_test_features(self,X):
@@ -281,7 +314,7 @@ class classifier(object):
 
     
     def predict_classifications(self,X):
-        predicted_Y = self.clf.predict(X)
+        predicted_Y = self.clf.predict(self.scaler(X))
         return predicted_Y
     
     def get_prob(self, X):
@@ -336,12 +369,7 @@ class multi_classifier(object):
         probs['classification'] = probs.idxmax(axis=1)
 
         return probs.classification
-            
-            
-            
-        
-    
-        
+                 
 ################# helper functions #########
 
 # Pickler
@@ -355,9 +383,7 @@ def get_Pickle(file):
         obj = pickle.load(f)
     f.close()
     return (obj_i for obj_i in obj)
-    
-def build_features(df,features):
-    pass
+
 
 # Return all ngrams of particular length
 def get_ngram_possibilities(pronunciation_list, length):
@@ -421,7 +447,7 @@ def get_stress_position(stress_map_list, stress=1):
 
 
 # Check if prefix exists
-def check_prefix(word):
+def check_prefix(word,prefixes_set):
     for letter_idx in range(len(word) + 1):
         if word[:letter_idx] in prefixes_set:
             return 1
@@ -429,7 +455,7 @@ def check_prefix(word):
 
 
 # Check if suffix exists
-def check_suffix(word):
+def check_suffix(word,suffixes_set):
     word_length = len(word)
     for letter_idx in range(word_length + 1):
         if word[abs(letter_idx - word_length):] in suffixes_set:
