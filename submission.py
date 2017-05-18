@@ -123,6 +123,7 @@ classifications = { '10'  : 0,
 
 vector_map = vowels + consonants
 
+
 ################# training #################
 
 def train(data, classifier_file,multi=None):  # do not change the heading of the function
@@ -132,16 +133,16 @@ def train(data, classifier_file,multi=None):  # do not change the heading of the
     if multi:
         classifier_cls = multi_classifier(classifier_type)
     else:
-        classifier_cls = classifier(classifier_type)
+        classifier_cls = classifier(classifier_type,class_weight='balanced')
     
-    features = ['prefix','suffix']
-        
+    features = ['prefix','suffix','phoneme_length','vowel_count'] + words.type_tags
+    classifier_cls.set_features(features)
     
-    train_X = words.df[features]
+    train_X = np.array(words.df[features])
     train_Y = words.df.classification
     
     classifier_cls.train(train_X, train_Y)
-    save_Pickle(classifier_cls,classifier_file)    
+    save_Pickle((words,classifier_cls),classifier_file)    
     
     return
 
@@ -149,13 +150,15 @@ def train(data, classifier_file,multi=None):  # do not change the heading of the
 ################# testing #################
 
 def test(data, classifier_file,sample=None,DEBUG=None):  # do not change the heading of the function
-    classifier_cls = get_Pickle(classifier_file)
-    test_words = word_data(data)
+    words, classifier_cls = get_Pickle(classifier_file)
+    test_words = word_data(data,train_type_tags=words.type_tags)
     
     if sample:
         test_words.df = test_words.df.sample(sample)
     
-    test_words.set_predicted_classes(classifier_cls.predict_classifications(test_words.df.destressed_ngram_counts))
+    features = classifier_cls.get_features()
+    feature_array = np.array(test_words.df[features])
+    test_words.set_predicted_classes(classifier_cls.predict_classifications(feature_array))
     pred = test_words.df.predicted_primary_index.tolist()
     
     if DEBUG:
@@ -185,12 +188,16 @@ ngrams_counts   = Dict object of ngrams
 
 '''
 class word_data(object):
-    def __init__(self,data):
+    def __init__(self,data,train_type_tags=[]):
         self.lines = [line_split(line) for line in data]
         self.df = pd.DataFrame(data=self.lines, columns=('word', 'pronunciation'))
         self.df['pn_list'] = self.df.pronunciation.apply(str.split)
+        self.df['phoneme_length'] = self.df.pn_list.str.len()
         self.df['destressed_pn_list'] = self.df.pronunciation.apply(filter_stress, args=('[012]',))
         self.df['vowel_map'] = self.df.destressed_pn_list.apply(phoneme_map, args=(vowels,))
+        self.df['consonant_map'] = self.df.destressed_pn_list.apply(phoneme_map, args=(consonants,))
+        self.df['vowel_count'] = self.df.vowel_map.apply(np.sum)
+        self.df['consonant_count'] = self.df.consonant_map.apply(np.sum)
         self.df['vowel_map_string'] = self.df.vowel_map.apply(to_string)
         self.df['stress_map'] = self.df.pn_list.apply(get_stress_map)
         self.df['classification'] = self.df.stress_map.apply(get_classification)
@@ -201,7 +208,32 @@ class word_data(object):
         self.df['destressed_ngram_counts'] = self.df.destressed_ngrams.apply(Counter)
         self.df['prefix'] = self.df.word.apply(check_prefix)
         self.df['suffix'] = self.df.word.apply(check_suffix)
-              
+        self.df['type_tag'] = self.df.word.apply(get_pos_tag)
+        
+        self._encode_type_tag(train_type_tags)
+        
+    def _encode_type_tag(self,train_type_tags):
+        if not train_type_tags:
+            self.type_tags = self.df.type_tag.unique().tolist()
+            type_tag_dummies = pd.get_dummies(self.df.type_tag)
+        else:
+            self.type_tags = train_type_tags
+            # Type_tags for test_data
+            test_type_tag_dummies = pd.get_dummies(self.df.type_tag)
+            # Word Types that are in both test and training
+            existing_columns = set(train_type_tags) & set(self.df.type_tag.unique())
+            # Word Types in the Training data that need 0 values in test
+            columns_to_be_added = set(train_type_tags) - existing_columns
+            # Get existing columns from testing dummies and add those that don't exist with default
+            type_tag_dummies = test_type_tag_dummies[list(existing_columns)]
+            # Add columns that don't exist in test
+            zeroes = np.zeros(shape=(len(self.df),len(columns_to_be_added)))
+            non_existant_columns = pd.DataFrame(zeroes,columns =list(columns_to_be_added))
+            # Concat and Sort like training data
+            type_tag_dummies = pd.concat([type_tag_dummies,non_existant_columns],axis=1)[train_type_tags]
+                 
+        self.df = pd.concat([self.df, type_tag_dummies],axis=1)
+            
     
     def set_predicted_classes(self,classes):
         self.df['predicted_classes'] = classes
@@ -228,12 +260,18 @@ test
 
 class classifier(object):
     def __init__(self,classifier_type,*args,**kwargs):
-        self.clf = classifier_type()
+        self.clf = classifier_type(**kwargs)
         self.encoder = LabelEncoder()
         self.vectorizer = DictVectorizer(dtype=int, sparse=True)
     
+    def set_features(self,feature_list):
+        self.features = feature_list
+        
+    def get_features(self):
+        return self.features
+    
     def train(self,X,Y):
-        self.train_X = self.vectorizer.fit_transform(X.tolist())
+        self.train_X = X
         self.train_Y = self.encoder.fit_transform(Y)
         self.clf.fit(self.train_X,self.train_Y)
 
@@ -243,11 +281,11 @@ class classifier(object):
 
     
     def predict_classifications(self,X):
-        predicted_Y = self.clf.predict(self._encode_test_features(X))
+        predicted_Y = self.clf.predict(X)
         return predicted_Y
     
     def get_prob(self, X):
-        return self.clf.predict_proba(self._encode_test_features(X))
+        return self.clf.predict_proba(X)
 
 
 '''
@@ -316,7 +354,7 @@ def get_Pickle(file):
     with open(file,'rb') as f:
         obj = pickle.load(f)
     f.close()
-    return obj
+    return (obj_i for obj_i in obj)
     
 def build_features(df,features):
     pass
