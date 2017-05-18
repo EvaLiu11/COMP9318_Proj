@@ -2,5 +2,7 @@ import helper
 import submission
 
 training_data = helper.read_data('./asset/training_data.txt')
-classifier_path = './asset/classifier.dat'
+test_data = helper.read_data('./asset/test_words.txt')
+classifier_path = './asset/Logistic.dat'
 submission.train(training_data, classifier_path)
+submission.test(test_data,classifier_path,DEBUG=True)
