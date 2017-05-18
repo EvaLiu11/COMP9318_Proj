@@ -150,12 +150,12 @@ vector_map = vowels + consonants
 
 ################# training #################
 
-def train(data, classifier_file,multi=None):  # do not change the heading of the function
+def train(data, classifier_file,multi=None,DEBUG=None):  # do not change the heading of the function
     words = word_data(data)        
     classifier_type = LogisticRegression
     
     if multi:
-        classifier_cls = multi_classifier(classifier_type)
+        classifier_cls = multi_classifier(classifier_type,class_weight='balanced')
     else:
         classifier_cls = classifier(classifier_type,class_weight='balanced')
     
@@ -166,7 +166,10 @@ def train(data, classifier_file,multi=None):  # do not change the heading of the
     train_Y = words.df.classification
     
     classifier_cls.train(train_X, train_Y)
-    save_Pickle((words,classifier_cls),classifier_file)    
+    save_Pickle((words,classifier_cls),classifier_file)
+    
+    if DEBUG:
+        print("Finished Training")
     
     return
 
@@ -237,8 +240,6 @@ class word_data(object):
         self.df['str_suf'] = self.df.word.apply(check_suffix,args=(strong_suffixes,))
         self.df['neu_pre'] = self.df.word.apply(check_prefix,args=(neutral_prefixes,))
         self.df['neu_suf'] = self.df.word.apply(check_suffix,args=(neutral_suffixes,))
-        #self.df['Suf_ER'] = self.df.word.apply(check)
-        
         self.df['type_tag'] = self.df.word.apply(get_pos_tag)
         
         self._encode_type_tag(train_type_tags)
@@ -318,7 +319,7 @@ class classifier(object):
         return predicted_Y
     
     def get_prob(self, X):
-        return self.clf.predict_proba(X)
+        return self.clf.predict_proba(self.scaler(X))
 
 
 '''
@@ -336,11 +337,11 @@ Three           = Classifier for Three
 '''
 
 class multi_classifier(object):
-    def __init__(self,classifier_type):
-        self.Zero = classifier(classifier_type)
-        self.One = classifier(classifier_type)
-        self.Two = classifier(classifier_type)
-        self.Three = classifier(classifier_type)
+    def __init__(self,classifier_type,**kwargs):
+        self.Zero = classifier(classifier_type,**kwargs)
+        self.One = classifier(classifier_type,**kwargs)
+        self.Two = classifier(classifier_type,**kwargs)
+        self.Three = classifier(classifier_type,**kwargs)
         self.clfs = OrderedDict({0 : self.Zero,
                                  1 : self.One,
                                  2 : self.Two,
@@ -352,6 +353,12 @@ class multi_classifier(object):
         for idx,clf in self.clfs.items():
             Y_bin = [cls == idx for cls in Y]
             clf.train(X,Y_bin)
+            
+    def set_features(self,feature_list):
+        self.features = feature_list
+        
+    def get_features(self):
+        return self.features
     
     def _encode_training_features(self,X):
         self.vectorizer.fit_transform(X.tolist())
